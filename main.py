@@ -9,7 +9,7 @@ from dash import Dash, html, dcc, Input, Output
 # ==============================
 # LOAD & BASIC PREP
 # ==============================
-df = pd.read_csv(r"C:\Users\maria\Downloads\visulaization\final_cleaned (1).csv")
+df = pd.read_csv(r"C:\Users\maria\Downloads\visulaization\final_cleaned.csv")
 
 # Basic standardization (light, no Nan → 'OTHER' changes, as you asked)
 df["borough"] = df["borough"].astype(str).str.upper().str.strip()
