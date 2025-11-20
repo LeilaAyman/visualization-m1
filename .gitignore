@@ -1,0 +1,7 @@
+# Ignore the large datasets
+final_cleaned.csv
+final_cleaned (1).csv
+crashes_cleaned.csv
+persons_cleaned.csv
+merged_crashes_persons.csv
+*.csv
