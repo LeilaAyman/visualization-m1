@@ -1,8 +1,7 @@
-nouran
+Nouran Ashraf:
 Q1: “At which hours do pedestrians/cyclists/motorists face highest injury risk?” → LINE CHART
-Q2: “How does crash severity vary by vehicle type & hour?” → HEATMAP
-nouran mohamed
-Nouran:
+Q2: “How does crash severity vary by vehicle category & hour?” → HEATMAP
+nouran mohamed:
 Research Question 1 (answered by the bar graph):
 # Which boroughs experience the highest number of injuries for a selected person type
 # (pedestrian, cyclist, or motorist) based on the search criteria?
