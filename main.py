@@ -7,6 +7,7 @@ import re
 import pandas as pd
 import plotly.express as px
 from dash import Dash, html, dcc, Input, Output, State
+import os  # <-- added for Render port
 
 # =======================================================
 # LOAD CLEANED CSV
@@ -63,6 +64,7 @@ df["person_age_group"] = df["person_age"].apply(categorize_age)
 # DASH APP LAYOUT
 # =======================================================
 app = Dash(__name__)
+server = app.server  # <-- REQUIRED FOR RENDER / GUNICORN
 
 app.layout = html.Div(style={"minHeight": "6000px"}, children=[
     html.H1("NYC Vehicle Collisions Dashboard", style={"textAlign": "center"}),
@@ -158,6 +160,7 @@ app.layout = html.Div(style={"minHeight": "6000px"}, children=[
     dcc.Graph(id="street_severity_graph"),
     dcc.Graph(id="age_group_graph"),
 ])
+
 # =======================================================
 # CALLBACK — APPLY ALL FILTERS TO ALL VISUALS
 # =======================================================
@@ -232,8 +235,9 @@ def update_all(n, borough, year, vehicle, factor, injury, query):
         return [empty] * 10
 
     # =======================================================
-    # VIS 1 — Total Injuries Trend
+    # VISUALIZATIONS BELOW (unchanged)
     # =======================================================
+
     vis1_data = (
         dff.groupby(["crash_year", "borough"], as_index=False)["total_injuries"].sum()
     )
@@ -249,9 +253,6 @@ def update_all(n, borough, year, vehicle, factor, injury, query):
     fig1.update_traces(mode="lines+markers", marker=dict(size=10))
     fig1.update_xaxes(type="category")
 
-    # =======================================================
-    # VIS 2 — Top Contributing Factors
-    # =======================================================
     fac = dff["contributing_factor_combined"].value_counts().head(10).reset_index()
     fac.columns = ["factor", "count"]
 
@@ -263,9 +264,6 @@ def update_all(n, borough, year, vehicle, factor, injury, query):
         title="Top 10 Contributing Factors"
     )
 
-    # =======================================================
-    # VIS 3 — Injuries by Borough
-    # =======================================================
     fig3 = px.bar(
         dff.groupby("borough")[person_column].sum().reset_index(),
         x="borough",
@@ -273,9 +271,6 @@ def update_all(n, borough, year, vehicle, factor, injury, query):
         title="Injuries by Borough (Filtered Person Type)"
     )
 
-    # =======================================================
-    # VIS 4 — Crashes by Day of Week
-    # =======================================================
     day_df = dff.groupby("crash_day_of_week").size().reset_index(name="crashes")
     day_df["day_name"] = day_df["crash_day_of_week"].map({
         0:"Mon",1:"Tue",2:"Wed",3:"Thu",4:"Fri",5:"Sat",6:"Sun",-1:"Unknown"
@@ -288,9 +283,6 @@ def update_all(n, borough, year, vehicle, factor, injury, query):
         title="Crashes by Day of Week"
     )
 
-    # =======================================================
-    # VIS 5 — Severity by Vehicle Category
-    # =======================================================
     fig5 = px.bar(
         dff.groupby("vehicle_category")["severity"].sum().reset_index(),
         x="vehicle_category",
@@ -298,9 +290,6 @@ def update_all(n, borough, year, vehicle, factor, injury, query):
         title="Severity Score by Vehicle Category"
     )
 
-    # =======================================================
-    # VIS 6 — Gender Breakdown by Borough
-    # =======================================================
     fig6 = px.bar(
         dff.groupby(["borough", "person_sex"]).size().reset_index(name="count"),
         x="borough",
@@ -310,9 +299,6 @@ def update_all(n, borough, year, vehicle, factor, injury, query):
         title="Injuries by Borough and Gender"
     )
 
-    # =======================================================
-    # VIS 7 — Hourly Injury Risk
-    # =======================================================
     hourly = dff.groupby("hour")[[
         "number_of_pedestrians_injured",
         "number_of_cyclist_injured",
@@ -334,9 +320,6 @@ def update_all(n, borough, year, vehicle, factor, injury, query):
         title="Average Hourly Injuries by User Type"
     )
 
-    # =======================================================
-    # VIS 8 — Severity Heatmap
-    # =======================================================
     heat = dff.groupby(["vehicle_category", "hour"])["severity"].mean().reset_index()
     pivot = heat.pivot(index="vehicle_category", columns="hour", values="severity").fillna(0)
 
@@ -345,9 +328,6 @@ def update_all(n, borough, year, vehicle, factor, injury, query):
         title="Heatmap of crash Severity by Vehicle Category and Hour"
     )
 
-    # =======================================================
-    # VIS 9 — Top Streets by Severity
-    # =======================================================
     street_df = (
         dff.groupby("on_street_name")["severity"]
         .sum()
@@ -362,9 +342,6 @@ def update_all(n, borough, year, vehicle, factor, injury, query):
         title="Top 15 Streets by Severity"
     )
 
-    # =======================================================
-    # VIS 10 — Age Group vs Injury Severity
-    # =======================================================
     fig10 = px.bar(
         dff.groupby(["person_age_group", "person_type", "person_injury"])
             .size().reset_index(name="count"),
@@ -404,7 +381,8 @@ def reset_search(n):
     return ""
 
 # =======================================================
-# RUN SERVER
+# RUN SERVER — REQUIRED FOR RENDER
 # =======================================================
 if __name__ == "__main__":
-    app.run_server(debug=False)
+    port = int(os.environ.get("PORT", 8050))
+    app.run_server(host="0.0.0.0", port=port, debug=False)
