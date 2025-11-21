@@ -1,6 +1,5 @@
-dash
+duckdb==0.10.2
 pandas
 plotly
-requests
-duckdb==1.0.0
+dash
 gunicorn
