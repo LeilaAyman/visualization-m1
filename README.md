@@ -1,0 +1,73 @@
+NYC Vehicle Collisions Dashboard
+An interactive data visualization dashboard analyzing NYC vehicle collision patterns, injury risks, and contributing factors using Python, Dash, and Plotly.
+Project Overview
+This project provides comprehensive insights into New York City traffic collisions through interactive visualizations. The dashboard enables users to explore crash patterns across boroughs, time periods, vehicle types, and demographic factors to identify high-risk scenarios and inform traffic safety strategies.
+Features
+
+Interactive Filtering: Filter data by borough, year, vehicle category, contributing factors, and injury types
+Natural Language Search: Search using free text (e.g., "Manhattan 2022 pedestrian crashes")
+9 Comprehensive Visualizations:
+
+Yearly injury trends across boroughs
+Top contributing factors analysis
+Borough-level injury distribution
+Day-of-week crash patterns
+Vehicle category severity analysis
+Gender-based crash involvement
+Hourly injury risk by road user type
+Vehicle-hour severity heatmap
+Age group vulnerability analysis
+
+----------------------------------------
+
+
+Research questions and visualizations 
+----------------------------------------
+Nouran Ashraf:
+Visualization #1 :
+Research Question 1: “At which hours do pedestrians/cyclists/motorists face highest injury risk?” → LINE CHART
+Visualization #2 :
+Research Question 2: “How does crash severity vary by vehicle category & hour?” → HEATMAP
+
+Nour:
+Visualization #1 :
+Research Question 1: What is the relationship between street type/location and crash severity?
+Visualized through horizontal bar chart.
+
+Visualization #2 :
+Research Question 2: Which age groups are most vulnerable to severe injuries, and does this differ by person type (pedestrian, cyclist,motorist)?
+Visualized through vertical bar chart.
+
+nouran mohamed:
+Research Question 1 (answered by the bar graph):
+Which boroughs experience the highest number of injuries for a selected person type
+(pedestrian, cyclist, or motorist) based on the search criteria?
+
+Research Question 2 (answered by the line graph):
+How are crashes distributed across days of the week for the selected subset
+of crashes (filtered by borough, year, person type, or vehicle)?
+
+ rika:
+ Visualization #1 :
+Research question: how do injuries change across years and boroughs?
+Visualized throughl line chart .
+
+ Visualization #2:
+Research question: which contributing factor vechile cause the most crashes?
+Visualized through bar chart.
+
+
+mariam:
+How do different vehicle types contribute to injury severity in NYC?
+How does crash frequency differ between males and females across NYC boroughs?
+
+
+Contributions in data cleaning:
+--------------------------------
+
+EDA : Rika Iskandar
+Pre-cleaning: Nour Elsisi
+Join operation: Nouran Ashraf and Nouran Mohamed
+Post-cleaning: Mariam 
+
+
