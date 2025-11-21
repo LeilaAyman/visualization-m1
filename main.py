@@ -12,7 +12,7 @@ from dash import Dash, html, dcc, Input, Output, State
 # =======================================================
 # LOAD CSV
 # =======================================================
-df = pd.read_csv(r"C:\Users\maria\Downloads\visulaization\final_cleaned2.csv")
+df = pd.read_csv(r"C:\Users\nourm\OneDrive\Desktop\PROJECTS\UNI_PROJECTS\Visualization\final_cleaned.csv")
 
 # Basic cleaning
 df["borough"] = df["borough"].astype(str).str.upper().str.strip()
@@ -107,31 +107,6 @@ df["severity"] = df["total_injuries"] + 5 * (
     + df["number_of_motorist_killed"]
 )
 
-# =======================================================
-# AGE GROUP CATEGORIZATION (for Vis 9)
-# =======================================================
-def categorize_age(age):
-    if pd.isna(age):
-        return "Unknown"
-    try:
-        age = int(age)
-    except (ValueError, TypeError):
-        return "Unknown"
-    if age < 18:
-        return "0–17"
-    elif age < 30:
-        return "18–29"
-    elif age < 45:
-        return "30–44"
-    elif age < 60:
-        return "45–59"
-    else:
-        return "60+"
-
-if "person_age" in df.columns:
-    df["person_age_group"] = df["person_age"].apply(categorize_age)
-else:
-    df["person_age_group"] = "Unknown"
 
 # =======================================================
 # DASH APP LAYOUT
@@ -230,7 +205,9 @@ app.layout = html.Div([
     dcc.Graph(id="user_severity_heatmap"),       # 8
 
     html.H3("Age Group vs Injury Severity Across Person Types", style={"textAlign": "center", "marginTop": "30px"}),
-    dcc.Graph(id="age_group_graph"),             # 9 (new)
+    dcc.Graph(id="age_group_graph"),             # 9 (new) ,
+    dcc.Graph(id="street_crash_severity_barchart"), # 10
+
 ])
 
 # =======================================================
@@ -246,7 +223,9 @@ app.layout = html.Div([
         Output("gender_borough_graph", "figure"),
         Output("user_hourly_injuries_graph", "figure"),
         Output("user_severity_heatmap", "figure"),
-        Output("age_group_graph", "figure"),
+        Output("age_group_graph", "figure"), 
+        Output("street_crash_severity_barchart", "figure"),
+
     ],
     Input("generate_report", "n_clicks"),
     [
@@ -418,36 +397,66 @@ def update_all(n, borough, year, vehicle, factor, injury, query):
         aspect="auto",
     )
 
-    # ========= FIGURE 9: Age Group vs Injury Severity Across Person Types =========
-    if "person_age_group" in dff.columns and "person_type" in dff.columns:
-        age_df = (
-            dff.groupby(["person_age_group", "person_type", "person_injury"])
-            .size()
-            .reset_index(name="count")
-        )
+    #visualization 9
+#RESEARCH QUESTION : Which age groups are most vulnerable to severe injuries, and does this differ by person type (pedestrian, cyclist, motorist)?
+    def categorize_age(age):
+      if pd.isna(age): return "Unknown"
+      age = int(age)
+      if age < 18: return "0–17"
+      elif age < 30: return "18–29"
+      elif age < 45: return "30–44"
+      elif age < 60: return "45–59"
+      else: return "60+"
 
-        fig9 = px.bar(
-            age_df,
-            x="person_age_group",
-            y="count",
-            color="person_injury",
-            facet_col="person_type",
-            category_orders={
-                "person_age_group": ["0–17", "18–29", "30–44", "45–59", "60+", "Unknown"]
-            },
-            title="Age Group vs Injury Severity Across Person Types",
-            labels={
-                "person_age_group": "Age Group",
-                "count": "Number of People",
-                "person_injury": "Injury Severity",
-                "person_type": "Person Type",
-            },
-            barmode="stack",
-        )
-    else:
-        fig9 = px.scatter(title="Age-group visualization not available (missing age/person_type columns).")
+    dff['person_age_group'] = dff['person_age'].apply(categorize_age)
 
-    return fig1, fig2, fig3, fig4, fig5, fig6, fig7, fig8, fig9
+    dff['person_age_group'] = dff['person_age'].apply(categorize_age)
+
+    age_df = (dff.groupby(['person_age_group', 'person_type', 'person_injury']).size().reset_index(name='count'))
+
+    fig9 = px.bar(
+        age_df,
+        x="person_age_group",
+        y="count",
+        color="person_injury",
+        facet_col="person_type",  # separate columns for pedestrian / cyclist / motorist
+        title="Age Group vs Injury Severity Across Person Types",
+        barmode="stack"
+)
+
+    #visualization 10
+    #Research Question: What is the relationship between street type/location and crash severity?
+
+    street_injury_df = (dff.groupby(['on_street_name', 'person_injury']).size().reset_index(name='count'))
+
+    top_streets = (street_injury_df.groupby('on_street_name')['count'].sum().nlargest(15).index)
+
+    street_injury_filtered = street_injury_df[street_injury_df['on_street_name'].isin(top_streets)]
+
+    fig10 = px.bar(
+        street_injury_filtered,
+        x="count",
+        y="on_street_name",
+        color="person_injury",
+        orientation="h",
+        title="Top 15 Streets by Crash Severity",
+        labels={"on_street_name": "Street Name", "count": "Number of Incidents", "person_injury": "Injury Type"},
+        barmode="stack",
+        color_discrete_map={
+            "Killed": "#d62728",
+            "Injured": "#ff7f0e",
+            "Unspecified": "#1f77b4"
+        }
+    )
+    
+    fig10.update_layout(
+        yaxis={'categoryorder': 'total ascending'},
+        height=600,
+        xaxis_title="Number of Incidents",
+        yaxis_title="Street Name"
+    )
+
+    return fig1, fig2, fig3, fig4, fig5, fig6, fig7, fig8, fig9 , fig10
 
 
 # =======================================================
@@ -484,7 +493,7 @@ def reset_search(n):
 # RUN APP
 # =======================================================
 if __name__ == "__main__":
-    app.run_server(
+    app.run(
         debug=False,
         dev_tools_hot_reload=False,
         dev_tools_silence_routes_logging=True,
