@@ -1,42 +1,38 @@
 # ============================================
-# main.py — RENDER-SAFE VERSION (DuckDB + GDrive)
+# main.py — RENDER-SAFE VERSION (DuckDB + Parquet)
 # ============================================
 
 import os
 import re
 import duckdb
-import pandas as pd
 import plotly.express as px
 from dash import Dash, dcc, html, Input, Output, State
 
 # =========================================================
-# GOOGLE DRIVE DIRECT CSV LINK (YOU PROVIDED IT)
+# PUBLIC BACKBLAZE PARQUET URL (NO 403)
 # =========================================================
-CSV_URL = "https://drive.google.com/uc?export=download&id=1vqL6CP13G0MuB-tIZLem7FFTOy5xBNCz"
+PARQUET_URL = "https://f005.backblazeb2.com/file/visuadataset4455/final_cleaned_final.parquet"
 
 # =========================================================
-# DUCKDB CONNECTION (does NOT load file into memory)
+# DUCKDB CONNECTION (streaming, low RAM)
 # =========================================================
 con = duckdb.connect(database=":memory:")
+
+# Create a virtual table over the remote parquet file
 con.execute(f"""
     CREATE VIEW collisions AS
-    SELECT * FROM read_csv_auto('{CSV_URL}');
+    SELECT *
+    FROM parquet_scan('{PARQUET_URL}');
 """)
 
 # =========================================================
-# HELPER — RUN QUERY AND RETURN DF
+# Helper to run SQL and return DataFrame
 # =========================================================
 def q(sql):
     return con.execute(sql).df()
 
 # =========================================================
-# DASH APP SETUP
-# =========================================================
-app = Dash(__name__)
-server = app.server
-
-# =========================================================
-# PRELOAD UNIQUE FILTER VALUES (Light, tiny queries)
+# Preload filter dropdown values
 # =========================================================
 boroughs = q("SELECT DISTINCT borough FROM collisions ORDER BY borough")["borough"].fillna("UNKNOWN")
 years = q("SELECT DISTINCT crash_year FROM collisions ORDER BY crash_year")["crash_year"]
@@ -45,17 +41,21 @@ factors = q("SELECT DISTINCT contributing_factor_combined FROM collisions ORDER 
 injuries = q("SELECT DISTINCT person_injury FROM collisions ORDER BY person_injury")["person_injury"]
 
 # =========================================================
-# DASH LAYOUT
+# DASH APP
 # =========================================================
+app = Dash(__name__)
+server = app.server
+
 app.layout = html.Div(children=[
+
     html.H1("NYC Vehicle Collisions Dashboard", style={"textAlign": "center"}),
 
     html.Div([
         html.Button("Generate Report", id="generate", style={
-            "background": "#27ae60", "color": "white", "padding": "10px 20px",
-            "marginBottom": "20px"
+            "background": "#27ae60", "color": "white",
+            "padding": "10px 20px", "fontWeight": "bold"
         })
-    ], style={"textAlign": "center"}),
+    ], style={"textAlign": "center", "margin": "20px"}),
 
     html.Div([
         dcc.Dropdown(id="borough_f", options=[{"label": b, "value": b} for b in boroughs], multi=True),
@@ -63,7 +63,8 @@ app.layout = html.Div(children=[
         dcc.Dropdown(id="vehicle_f", options=[{"label": v, "value": v} for v in vehicles], multi=True),
         dcc.Dropdown(id="factor_f", options=[{"label": f, "value": f} for f in factors], multi=True),
         dcc.Dropdown(id="injury_f", options=[{"label": i, "value": i} for i in injuries], multi=True),
-        dcc.Input(id="search", type="text", placeholder="Search text…", debounce=True)
+        dcc.Input(id="search", type="text", debounce=True,
+                  style={"marginTop": "10px"}, placeholder="Search text...")
     ], style={"margin": "20px"}),
 
     dcc.Graph(id="g1"),
@@ -79,35 +80,25 @@ app.layout = html.Div(children=[
 ])
 
 # =========================================================
-# BUILD FILTER QUERY
+# Build WHERE SQL clause
 # =========================================================
 def build_where(borough, year, vehicle, factor, injury, query):
-    filters = []
+    f = []
 
-    if borough:
-        filters.append(f"borough IN ({','.join([repr(b) for b in borough])})")
+    if borough: f.append(f"borough IN ({','.join([repr(b) for b in borough])})")
+    if year: f.append(f"crash_year IN ({','.join([str(y) for y in year])})")
+    if vehicle: f.append(f"vehicle_category IN ({','.join([repr(v) for v in vehicle])})")
+    if factor: f.append(f"contributing_factor_combined IN ({','.join([repr(fc) for fc in factor])})")
+    if injury: f.append(f"person_injury IN ({','.join([repr(i) for i in injury])})")
 
-    if year:
-        filters.append(f"crash_year IN ({','.join([str(y) for y in year])})")
-
-    if vehicle:
-        filters.append(f"vehicle_category IN ({','.join([repr(v) for v in vehicle])})")
-
-    if factor:
-        filters.append(f"contributing_factor_combined IN ({','.join([repr(f) for f in factor])})")
-
-    if injury:
-        filters.append(f"person_injury IN ({','.join([repr(i) for i in injury])})")
-
-    if query and len(query) > 2:
+    if query and len(query) >= 3:
         qtext = query.lower()
-        filters.append(f"lower(borough) LIKE '%{qtext}%' OR lower(on_street_name) LIKE '%{qtext}%'")
+        f.append(f"(lower(borough) LIKE '%{qtext}%' OR lower(on_street_name) LIKE '%{qtext}%')")
 
-    return ("WHERE " + " AND ".join(filters)) if filters else ""
-
+    return "WHERE " + " AND ".join(f) if f else ""
 
 # =========================================================
-# CALLBACK — RUN 10 QUERIES (Each <0.1 sec)
+# CALLBACK — runs DuckDB queries (fast)
 # =========================================================
 @app.callback(
     [
@@ -123,56 +114,59 @@ def build_where(borough, year, vehicle, factor, injury, query):
     ]
 )
 def update(_, borough, year, vehicle, factor, injury, query):
+
     where = build_where(borough, year, vehicle, factor, injury, query)
 
-    # 1 — Injuries by year
+    # 1 — injuries by year
     df1 = q(f"""
         SELECT crash_year, borough, SUM(number_of_persons_injured) AS injuries
         FROM collisions {where}
-        GROUP BY crash_year, borough ORDER BY crash_year
+        GROUP BY crash_year, borough
+        ORDER BY crash_year
     """)
-
     fig1 = px.line(df1, x="crash_year", y="injuries", color="borough",
                    title="Total Injuries by Year & Borough")
 
-    # 2 — Top factors
+    # 2 — top factors
     df2 = q(f"""
         SELECT contributing_factor_combined AS factor, COUNT(*) AS count
         FROM collisions {where}
-        GROUP BY factor ORDER BY count DESC LIMIT 10
+        GROUP BY factor
+        ORDER BY count DESC LIMIT 10
     """)
     fig2 = px.bar(df2, x="count", y="factor", orientation="h",
                   title="Top 10 Contributing Factors")
 
-    # 3 — Injuries by borough
+    # 3 — borough injuries
     df3 = q(f"""
         SELECT borough, SUM(number_of_persons_injured) AS injuries
         FROM collisions {where}
         GROUP BY borough
     """)
-    fig3 = px.bar(df3, x="borough", y="injuries", title="Injuries by Borough")
+    fig3 = px.bar(df3, x="borough", y="injuries",
+                  title="Injuries by Borough")
 
-    # 4 — Crashes by day
+    # 4 — crashes by day
     df4 = q(f"""
         SELECT crash_day_of_week, COUNT(*) AS crashes
         FROM collisions {where}
-        GROUP BY crash_day_of_week ORDER BY crash_day_of_week
+        GROUP BY crash_day_of_week
+        ORDER BY crash_day_of_week
     """)
     fig4 = px.line(df4, x="crash_day_of_week", y="crashes",
                    title="Crashes by Day of Week")
 
-    # 5 — Severity by vehicle
+    # 5 — severity by vehicle
     df5 = q(f"""
-        SELECT vehicle_category, SUM(
-            number_of_persons_injured + 5*number_of_persons_killed
-        ) AS severity
+        SELECT vehicle_category,
+            SUM(number_of_persons_injured + 5*number_of_persons_killed) AS severity
         FROM collisions {where}
         GROUP BY vehicle_category
     """)
     fig5 = px.bar(df5, x="vehicle_category", y="severity",
                   title="Severity Score by Vehicle Type")
 
-    # 6 — Gender breakdown
+    # 6 — gender distribution
     df6 = q(f"""
         SELECT borough, person_sex, COUNT(*) AS count
         FROM collisions {where}
@@ -181,7 +175,7 @@ def update(_, borough, year, vehicle, factor, injury, query):
     fig6 = px.bar(df6, x="borough", y="count", color="person_sex",
                   title="Gender Distribution by Borough")
 
-    # 7 — Avg injuries by hour & type
+    # 7 — avg injuries by hour
     df7 = q(f"""
         SELECT hour,
             AVG(number_of_pedestrians_injured) AS ped,
@@ -194,29 +188,28 @@ def update(_, borough, year, vehicle, factor, injury, query):
     fig7 = px.line(melted, x="hour", y="avg", color="type",
                    title="Average Injuries by Hour")
 
-    # 8 — Severity heatmap
+    # 8 — severity heatmap
     df8 = q(f"""
         SELECT vehicle_category, hour,
-            AVG(
-                number_of_persons_injured + 5*number_of_persons_killed
-            ) AS sev
+            AVG(number_of_persons_injured + 5*number_of_persons_killed) AS sev
         FROM collisions {where}
         GROUP BY vehicle_category, hour
     """)
     fig8 = px.density_heatmap(df8, x="hour", y="vehicle_category", z="sev",
                               title="Severity Heatmap")
 
-    # 9 — Top streets
+    # 9 — top streets
     df9 = q(f"""
         SELECT on_street_name,
             SUM(number_of_persons_injured + 5*number_of_persons_killed) AS sev
         FROM collisions {where}
-        GROUP BY on_street_name ORDER BY sev DESC LIMIT 15
+        GROUP BY on_street_name
+        ORDER BY sev DESC LIMIT 15
     """)
     fig9 = px.bar(df9, x="on_street_name", y="sev",
                   title="Top 15 Streets by Severity")
 
-    # 10 — Age group vs injury
+    # 10 — age vs injury
     df10 = q(f"""
         SELECT person_age_group, person_type, person_injury, COUNT(*) AS count
         FROM collisions {where}
@@ -226,11 +219,10 @@ def update(_, borough, year, vehicle, factor, injury, query):
                    color="person_injury", facet_col="person_type",
                    title="Age Group vs Injury Severity")
 
-    return fig1,fig2,fig3,fig4,fig5,fig6,fig7,fig8,fig9,fig10
-
+    return fig1, fig2, fig3, fig4, fig5, fig6, fig7, fig8, fig9, fig10
 
 # =========================================================
-# RUN SERVER ON RENDER
+# LAUNCH SERVER
 # =========================================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8050))
