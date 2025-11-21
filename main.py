@@ -12,7 +12,7 @@ import os  # <-- added for Render port
 # =======================================================
 # LOAD CLEANED CSV
 # =======================================================
-df = pd.read_csv("https://drive.google.com/uc?export=download&id=1vqL6CP13G0MuB-tIZLem7FFTOy5xBNCz")
+df = pd.read_csv("https://f005.backblazeb2.com/file/visuadataset4455/final_cleaned_final.csv")
 
 # =======================================================
 # CLEANING CRITICAL COLUMNS
