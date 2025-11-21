@@ -1,0 +1,140 @@
+Overall Process
+
+Our team divided the project into four major phases to ensure a clean data pipeline and a smooth visualization development process:
+
+1)EDA phase
+2)Pre-Cleaning Phase
+3) Data Integration (Join) & Post-Cleaning
+4)Dashboard Development & Deployment
+
+_Our work flow from EDA till webpage development:
+
+We collaborated using a shared Google Colab notebook for all preprocessing and exploratory work, and later moved to VS Code + Dash to build the interactive dashboard.
+The final website was deployed through Render, with the dataset hosted on Google Drive due to its large size.
+
+1) Exploratory Data Analysis (Handled by Marina and Nour):
+
+Marina and Nour conducted the EDA required to understand the dataset structure and identify meaningful insights.
+She visualized:
+
+Distributions
+
+Outliers
+
+Correlations
+
+Temporal patterns
+
+Injury trends
+
+The EDA guided the selection of the 10 final research questions and visualization types.
+
+
+ 2) Pre-Cleaning (Handled by Marina and Nour):
+
+Marina and Nour were responsible for the initial raw dataset cleaning, which included:
+
+Removing obvious inconsistencies and corrupted rows
+
+Handling null values in critical columns
+
+Normalizing text fields (uppercasing, trimming whitespace, etc.)
+
+Converting date and time fields to proper formats
+
+Extracting year and hour attributes
+
+This stage ensured that the dataset was usable for deeper processing.
+
+3) Joining & Post-Cleaning(Handled by Mariam, Nouran Mohamed & Nouran Ashraf)
+_Join (Merge):
+
+ Integration of the crashes and persons datasets, ensuring:
+
+Correct key matching ( Collision_ID)
+
+Maintaining referential integrity
+
+Avoiding duplicate join rows
+
+Validating merged statistics
+
+_Post-Cleaning Tasks:
+
+Fixing data types (numeric, categorical, datetime)
+
+Creating derived fields such as:
+
+total_injuries
+
+severity score
+
+vehicle category
+
+age groups
+
+Removing duplicates
+
+Standardizing column names across datasets
+This created the final unified cleaned dataset used for all visualizations.
+
+
+4) Dashboard Development & Deployment:
+
+We collaboratively built the web dashboard using:
+
+Python Dash (for layout, callbacks, and interactive visuals)
+
+Plotly Express (for charts)
+
+VS Code (for code organization)
+
+We then:
+
+Uploaded the dataset to Google Drive because it exceeds GitHub’s file size limit
+
+Hosted the dashboard on Render
+
+Connected the live dataset URL to the final application
+
+ TEAM VISUALIZATION RESPONSIBILITIES (By Research Question)
+Nouran Ashraf:
+
+Q1: At which hours do pedestrians, cyclists, and motorists face the highest injury risk?
+→ Line Chart (Hourly Injury Risk)
+
+Q2: How does crash severity vary by vehicle category and hour?
+→ Heatmap (Vehicle Category × Hour Severity)
+
+Nouran Mohamed:
+
+Q1: Which boroughs experience the highest injuries for a selected person type (pedestrian / cyclist / motorist)?
+→ Bar Chart (Borough Injuries)
+
+Q2: How are crashes distributed across the days of the week for the selected filters?
+→ Line Chart (Crash Frequency by Weekday)
+
+Rika:
+
+Q1: How do injuries change across years and boroughs?
+→ Line Chart (Injuries Over Time)
+
+Q2: Which contributing factors cause the most crashes?
+→ Horizontal Bar Chart (Top Contributing Factors)
+
+Mariam
+
+Q1: How do different vehicle types contribute to injury severity in NYC?
+→ Bar Chart (Severity by Vehicle Type)
+
+Q2: How does crash frequency differ between males and females across NYC boroughs?
+→ Grouped Bar Chart (Gender × Borough)
+
+Nour:
+Visualization #1 :
+Research Question 1: What is the relationship between street type/location and crash severity?
+Visualized through horizontal bar chart.
+
+Visualization #2 :
+Research Question 2: Which age groups are most vulnerable to severe injuries, and does this differ by person type (pedestrian, cyclist,motorist)?
+Visualized through vertical bar chart.
