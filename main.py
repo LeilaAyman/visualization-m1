@@ -11,7 +11,7 @@ from dash import Dash, html, dcc, Input, Output, State
 # =======================================================
 # LOAD CLEANED CSV
 # =======================================================
-df = pd.read_csv(r"C:\Users\noura\Documents\visualization-m1\final_cleaned2.csv")
+df = pd.read_csv(r"final_cleaned_final.csv")
 
 # =======================================================
 # CLEANING CRITICAL COLUMNS
