@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: visualization-m1
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn main:server
+    envVars:
+      PYTHON_VERSION: 3.12.2
