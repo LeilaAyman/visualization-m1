@@ -9,10 +9,9 @@ from dash import Dash, html, dcc, Input, Output, State
 # =======================================================
 # LOAD PARQUET INSTEAD OF 1GB CSV  (MUCH FASTER + LOW RAM)
 # =======================================================
-
 PARQUET_URL = "https://f005.backblazeb2.com/file/visuadataset4455/final_cleaned_final.parquet"
 
-df = pd.read_parquet(PARQUET_URL)
+df = pd.read_parquet(PARQUET_URL, engine="pyarrow")
 
 # =======================================================
 # CLEANING CRITICAL COLUMNS
