@@ -133,8 +133,8 @@ Q2: How does crash frequency differ between males and females across NYC borough
 Nour:
 Visualization #1 :
 Research Question 1: What is the relationship between street type/location and crash severity?
-Visualized through horizontal bar chart.
+Visualized through vertical bar chart - street name by severity  ( severity being a custom attribute which is the sum of all injuries and killed count )
 
 Visualization #2 :
 Research Question 2: Which age groups are most vulnerable to severe injuries, and does this differ by person type (pedestrian, cyclist,motorist)?
-Visualized through vertical bar chart.
+Visualized through vertical bar chart - person age by count
