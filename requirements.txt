@@ -1,6 +1,6 @@
 dash
-dash-bootstrap-components
-plotly
-duckdb
 pandas
+plotly
+requests
+duckdb==1.0.0
 gunicorn
