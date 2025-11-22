@@ -285,23 +285,52 @@ def update(_, borough, year, vehicle, factor, injury, query):
     # ============================================================
     # 5 — Injured vs Killed by Vehicle Category (SIDE-BY-SIDE)
     # ============================================================
+   # ============================================================
+# 5 — Severity (injured + 5*killed) by Vehicle Category
+#    SIDE-BY-SIDE: Injured vs Killed with Severity Logic
+# ============================================================
+
     df5 = q(f"""
         SELECT 
             vehicle_category,
-            SUM(number_of_persons_injured) AS injured,
-            SUM(number_of_persons_killed) AS killed
+    
+            -- standard injured count
+            SUM(
+                number_of_pedestrians_injured +
+                number_of_cyclist_injured +
+                number_of_motorist_injured
+            ) AS injured,
+    
+            -- standard killed count
+            SUM(
+                number_of_pedestrians_killed +
+                number_of_cyclist_killed +
+                number_of_motorist_killed
+            ) AS killed,
+    
+            -- severity using the new consistent formula
+            SUM(
+                number_of_pedestrians_injured +
+                number_of_cyclist_injured +
+                number_of_motorist_injured +
+                5*(number_of_pedestrians_killed +
+                   number_of_cyclist_killed +
+                   number_of_motorist_killed)
+            ) AS severity
+    
         FROM collisions
         {where}
         GROUP BY vehicle_category
     """)
-
+    
     fig5 = px.bar(
         df5,
         x="vehicle_category",
-        y=["injured", "killed"],
+        y=["injured", "killed", "severity"],
         barmode="group",
-        title="Injured vs Killed by Vehicle Category"
+        title="Injured, Killed & Severity Score by Vehicle Category"
     )
+
 
     # 6 — Gender Counts
     df_gender = q(f"""
