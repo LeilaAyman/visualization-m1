@@ -5,13 +5,13 @@ import plotly.express as px
 from dash import Dash, html, dcc, Input, Output, State
 
 # =========================================================
-# PARQUET SETTINGS
+# DATASET
 # =========================================================
 PARQUET_URL = "https://f005.backblazeb2.com/file/visuadataset4455/final_cleaned_final.parquet"
 LOCAL_PATH = "dataset.parquet"
 
+
 def ensure_dataset():
-    """Download parquet if missing."""
     if not os.path.exists(LOCAL_PATH):
         print("🔥 Downloading dataset…")
         r = requests.get(PARQUET_URL, stream=True)
@@ -24,76 +24,96 @@ def ensure_dataset():
     else:
         print("👍 Using cached dataset")
 
+
 ensure_dataset()
 
 # =========================================================
-# DUCKDB CONNECTION (NO PANDAS)
+# DUCKDB SETUP
 # =========================================================
 con = duckdb.connect(database=":memory:")
 
+# Load parquet as READ-ONLY virtual table (NO RAM COPY)
 con.execute(f"""
-    CREATE TABLE collisions AS
-    SELECT
-        *,
-        CASE
-            WHEN crash_time RLIKE '^[0-9]?[0-9]:' THEN CAST(split_part(crash_time, ':', 1) AS INT)
-            ELSE NULL
-        END AS hour,
-        (
-            COALESCE(number_of_persons_injured, 0) +
-            COALESCE(number_of_pedestrians_injured, 0) +
-            COALESCE(number_of_cyclist_injured, 0) +
-            COALESCE(number_of_motorist_injured, 0)
-        ) AS total_injuries,
-        (
-            COALESCE(number_of_persons_injured, 0) +
-            COALESCE(number_of_pedestrians_injured, 0) +
-            COALESCE(number_of_cyclist_injured, 0) +
-            COALESCE(number_of_motorist_injured, 0)
-            +
-            5 * (
-                COALESCE(number_of_persons_killed, 0) +
-                COALESCE(number_of_pedestrians_killed, 0) +
-                COALESCE(number_of_cyclist_killed, 0) +
-                COALESCE(number_of_motorist_killed, 0)
-            )
-        ) AS severity,
-        CASE
-            WHEN person_age IS NULL THEN 'Unknown'
-            WHEN person_age < 18 THEN '0–17'
-            WHEN person_age < 30 THEN '18–29'
-            WHEN person_age < 45 THEN '30–44'
-            WHEN person_age < 60 THEN '45–59'
-            ELSE '60+'
-        END AS person_age_group
-    FROM read_parquet('{LOCAL_PATH}');
+    CREATE TABLE collisions_raw AS
+    SELECT * FROM read_parquet('{LOCAL_PATH}');
 """)
 
-def q(sql, params=None):
-    return con.execute(sql, params or {}).df()  # tiny dataframe chunks only for plotly
+# Create safe computed view
+con.execute("""
+CREATE VIEW collisions AS
+SELECT
+    *,
+    CASE
+        WHEN crash_time IS NULL THEN NULL
+        WHEN regexp_matches(crash_time, '^[0-9]{1,2}:')
+            THEN CAST(split_part(crash_time, ':', 1) AS INTEGER)
+        ELSE NULL
+    END AS hour,
+
+    (
+        COALESCE(number_of_persons_injured, 0) +
+        COALESCE(number_of_pedestrians_injured, 0) +
+        COALESCE(number_of_cyclist_injured, 0) +
+        COALESCE(number_of_motorist_injured, 0)
+    ) AS total_injuries,
+
+    (
+        COALESCE(number_of_persons_injured, 0) +
+        COALESCE(number_of_pedestrians_injured, 0) +
+        COALESCE(number_of_cyclist_injured, 0) +
+        COALESCE(number_of_motorist_injured, 0)
+        +
+        5 * (
+            COALESCE(number_of_persons_killed, 0) +
+            COALESCE(number_of_pedestrians_killed, 0) +
+            COALESCE(number_of_cyclist_killed, 0) +
+            COALESCE(number_of_motorist_killed, 0)
+        )
+    ) AS severity,
+
+    CASE
+        WHEN person_age IS NULL THEN 'Unknown'
+        WHEN TRY_CAST(person_age AS INTEGER) < 18 THEN '0–17'
+        WHEN TRY_CAST(person_age AS INTEGER) < 30 THEN '18–29'
+        WHEN TRY_CAST(person_age AS INTEGER) < 45 THEN '30–44'
+        WHEN TRY_CAST(person_age AS INTEGER) < 60 THEN '45–59'
+        ELSE '60+'
+    END AS person_age_group
+
+FROM collisions_raw;
+""")
+
+# Helper
+def q(sql):
+    return con.execute(sql).df()
 
 
 # =========================================================
-# DASH APP UI
+# PRELOAD DROPDOWN OPTIONS (Tiny Queries)
+# =========================================================
+boroughs = q("SELECT DISTINCT borough FROM collisions ORDER BY borough")["borough"].tolist()
+years = q("SELECT DISTINCT crash_year FROM collisions ORDER BY crash_year")["crash_year"].tolist()
+vehicles = q("SELECT DISTINCT vehicle_category FROM collisions ORDER BY vehicle_category")["vehicle_category"].tolist()
+factors = q("SELECT DISTINCT contributing_factor_combined FROM collisions ORDER BY contributing_factor_combined")["contributing_factor_combined"].tolist()
+injuries = q("SELECT DISTINCT person_injury FROM collisions ORDER BY person_injury")["person_injury"].tolist()
+
+
+# =========================================================
+# DASH APP
 # =========================================================
 app = Dash(__name__)
 server = app.server
 
-# Preload dropdown options using tiny queries
-boroughs = [row[0] for row in con.execute("SELECT DISTINCT borough FROM collisions ORDER BY borough").fetchall()]
-years = [row[0] for row in con.execute("SELECT DISTINCT crash_year FROM collisions ORDER BY crash_year").fetchall()]
-vehicles = [row[0] for row in con.execute("SELECT DISTINCT vehicle_category FROM collisions ORDER BY vehicle_category").fetchall()]
-factors = [row[0] for row in con.execute("SELECT DISTINCT contributing_factor_combined FROM collisions ORDER BY contributing_factor_combined").fetchall()]
-injuries = [row[0] for row in con.execute("SELECT DISTINCT person_injury FROM collisions ORDER BY person_injury").fetchall()]
-
 app.layout = html.Div(style={"minHeight": "6000px"}, children=[
+
     html.H1("NYC Vehicle Collisions Dashboard", style={"textAlign": "center"}),
 
     html.Div([
         html.Button("Clear All Filters", id="clear_filters",
                     style={"background": "#c0392b", "color": "white", "padding": "8px 18px"}),
         html.Button("Clear Search", id="clear_search",
-                    style={"background": "#2980b9", "color": "white", "padding": "8px 18px", "marginLeft": "10px"})
+                    style={"background": "#2980b9", "color": "white",
+                           "padding": "8px 18px", "marginLeft": "10px"})
     ], style={"textAlign": "center", "marginBottom": "15px"}),
 
     html.Div([
@@ -102,6 +122,8 @@ app.layout = html.Div(style={"minHeight": "6000px"}, children=[
                            "padding": "10px 20px", "fontWeight": "bold"})
     ], style={"textAlign": "center", "marginBottom": "20px"}),
 
+
+    # Filters
     html.Div([
 
         html.Div([
@@ -133,7 +155,6 @@ app.layout = html.Div(style={"minHeight": "6000px"}, children=[
             dcc.Dropdown(id="injury_filter",
                 options=[{"label": i, "value": i} for i in injuries], multi=True)
         ], style={"width": "15%", "display": "inline-block"}),
-
     ]),
 
     html.Br(),
@@ -144,46 +165,51 @@ app.layout = html.Div(style={"minHeight": "6000px"}, children=[
                   style={"width": "60%", "height": "40px"})
     ], style={"textAlign": "center", "marginBottom": "20px"}),
 
+
+    # 10 graphs
     *[dcc.Graph(id=f"g{i}") for i in range(1, 11)]
+
 ])
 
 
 # =========================================================
-# WHERE CLAUSE BUILDER (SQL ONLY)
+# WHERE CLAUSE BUILDER
 # =========================================================
-def build_where(borough, year, vehicle, factor, injury, query):
+def build_where(borough, year, vehicle, factor, injury, search):
     filters = []
 
     if borough:
-        filters.append(f"borough IN {tuple(borough)}")
+        filters.append(f"borough IN ({','.join(repr(b) for b in borough)})")
     if year:
-        filters.append(f"crash_year IN {tuple(year)}")
+        filters.append(f"crash_year IN ({','.join(str(y) for y in year)})")
     if vehicle:
-        filters.append(f"vehicle_category IN {tuple(vehicle)}")
+        filters.append(f"vehicle_category IN ({','.join(repr(v) for v in vehicle)})")
     if factor:
-        filters.append(f"contributing_factor_combined IN {tuple(factor)}")
+        filters.append(f"contributing_factor_combined IN ({','.join(repr(f) for f in factor)})")
     if injury:
-        filters.append(f"person_injury IN {tuple(injury)}")
+        filters.append(f"person_injury IN ({','.join(repr(i) for i in injury)})")
 
-    if query:
-        q = f"%{query.lower()}%"
+    if search:
+        s = search.lower().replace("'", "''")
         filters.append(f"""
-            LOWER(borough) LIKE '{q}' OR
-            LOWER(on_street_name) LIKE '{q}' OR
-            LOWER(vehicle_category) LIKE '{q}' OR
-            LOWER(person_type) LIKE '{q}' OR
-            LOWER(person_injury) LIKE '{q}' OR
-            LOWER(contributing_factor_combined) LIKE '{q}'
+            (
+                LOWER(borough) LIKE '%{s}%'
+                OR LOWER(on_street_name) LIKE '%{s}%'
+                OR LOWER(vehicle_category) LIKE '%{s}%'
+                OR LOWER(person_type) LIKE '%{s}%'
+                OR LOWER(person_injury) LIKE '%{s}%'
+                OR LOWER(contributing_factor_combined) LIKE '%{s}%'
+            )
         """)
 
-    return ("WHERE " + " AND ".join(filters)) if filters else ""
+    return "WHERE " + " AND ".join(filters) if filters else ""
 
 
 # =========================================================
-# CALLBACK — 10 VISUALIZATIONS
+# CALLBACK – 10 VISUALS USING DUCKDB SQL
 # =========================================================
 @app.callback(
-    [Output(f"g{i}", "figure") for i in range(1, 11)],
+    [Output(f"g{i}", "figure") for i in range(1, 10 + 1)],
     Input("generate_report", "n_clicks"),
     [
         State("borough_filter", "value"),
@@ -192,23 +218,23 @@ def build_where(borough, year, vehicle, factor, injury, query):
         State("factor_filter", "value"),
         State("injury_filter", "value"),
         State("search_box", "value"),
-    ]
+    ],
 )
-def update_all(_, borough, year, vehicle, factor, injury, query):
+def update(n, borough, year, vehicle, factor, injury, search):
 
-    where = build_where(borough, year, vehicle, factor, injury, query)
+    where = build_where(borough, year, vehicle, factor, injury, search)
 
-    # ========== VIS 1 ==========
+    # VIS 1
     df1 = q(f"""
-        SELECT crash_year, borough, SUM(total_injuries) AS total
+        SELECT crash_year, borough, SUM(total_injuries) AS total_injuries
         FROM collisions {where}
         GROUP BY crash_year, borough
         ORDER BY crash_year
     """)
-    fig1 = px.line(df1, x="crash_year", y="total", color="borough",
-                   title="Total Injuries Trend")
+    fig1 = px.line(df1, x="crash_year", y="total_injuries", color="borough",
+                   title="Total Injuries Trend by Year & Borough")
 
-    # ========== VIS 2 ==========
+    # VIS 2
     df2 = q(f"""
         SELECT contributing_factor_combined AS factor, COUNT(*) AS count
         FROM collisions {where}
@@ -217,100 +243,96 @@ def update_all(_, borough, year, vehicle, factor, injury, query):
         LIMIT 10
     """)
     fig2 = px.bar(df2, x="count", y="factor", orientation="h",
-                  title="Top Factors")
+                  title="Top 10 Contributing Factors")
 
-    # ========== VIS 3 ==========
+    # VIS 3
     df3 = q(f"""
-        SELECT borough,
-               SUM(
-                   CASE
-                       WHEN LOWER('{query or ""}') LIKE '%pedestrian%' THEN number_of_pedestrians_injured
-                       WHEN LOWER('{query or ""}') LIKE '%cyclist%' THEN number_of_cyclist_injured
-                       WHEN LOWER('{query or ""}') LIKE '%motorist%' THEN number_of_motorist_injured
-                       ELSE number_of_cyclist_injured
-                   END
-               ) AS injuries
+        SELECT borough, SUM(total_injuries) AS injuries
         FROM collisions {where}
         GROUP BY borough
     """)
     fig3 = px.bar(df3, x="borough", y="injuries",
-                  title="Injuries by Borough")
+                  title="Total Injuries by Borough")
 
-    # ========== VIS 4 ==========
+    # VIS 4
     df4 = q(f"""
-        SELECT crash_day_of_week,
-               COUNT(*) AS crashes
+        SELECT crash_day_of_week, COUNT(*) AS crashes
         FROM collisions {where}
         GROUP BY crash_day_of_week
         ORDER BY crash_day_of_week
     """)
     df4["day"] = df4["crash_day_of_week"].map({
-        0:"Mon",1:"Tue",2:"Wed",3:"Thu",4:"Fri",5:"Sat",6:"Sun"
+        0:"Mon",1:"Tue",2:"Wed",3:"Thu",4:"Fri",5:"Sat",6:"Sun",-1:"Unknown"
     })
     fig4 = px.line(df4, x="day", y="crashes",
-                   title="Crashes by Day")
+                   title="Crashes by Day of Week")
 
-    # ========== VIS 5 ==========
+    # VIS 5
     df5 = q(f"""
         SELECT vehicle_category, SUM(severity) AS severity
         FROM collisions {where}
         GROUP BY vehicle_category
     """)
     fig5 = px.bar(df5, x="vehicle_category", y="severity",
-                  title="Severity by Vehicle Type")
+                  title="Severity Score by Vehicle Category")
 
-    # ========== VIS 6 ==========
+    # VIS 6
     df6 = q(f"""
         SELECT borough, person_sex, COUNT(*) AS crashes
         FROM collisions {where}
         GROUP BY borough, person_sex
     """)
-    fig6 = px.bar(df6, x="borough", y="crashes",
-                  color="person_sex", barmode="group",
+    fig6 = px.bar(df6, x="borough", y="crashes", color="person_sex",
+                  barmode="group",
                   title="Crashes by Borough & Gender")
 
-    # ========== VIS 7 ==========
+    # VIS 7
     df7 = q(f"""
         SELECT hour,
-               AVG(number_of_pedestrians_injured) AS ped,
-               AVG(number_of_cyclist_injured) AS cyc,
-               AVG(number_of_motorist_injured) AS mot
+            AVG(number_of_pedestrians_injured) AS ped,
+            AVG(number_of_cyclist_injured) AS cyc,
+            AVG(number_of_motorist_injured) AS mot
         FROM collisions {where}
         GROUP BY hour
         ORDER BY hour
     """)
-    melted = df7.melt(id_vars="hour", var_name="type", value_name="avg")
+    melted = df7.melt(id_vars="hour", var_name="type", value_name="avg_injuries")
     melted["type"] = melted["type"].map({
         "ped":"Pedestrian","cyc":"Cyclist","mot":"Motorist"
     })
-    fig7 = px.line(melted, x="hour", y="avg", color="type",
-                   title="Hourly Injuries")
+    fig7 = px.line(melted, x="hour", y="avg_injuries", color="type",
+                   title="Average Hourly Injuries by User Type")
 
-    # ========== VIS 8 ==========
+    # VIS 8
     df8 = q(f"""
-        SELECT vehicle_category, hour, AVG(severity) AS sev
+        SELECT vehicle_category, hour, AVG(severity) AS avg_sev
         FROM collisions {where}
         GROUP BY vehicle_category, hour
     """)
     if df8.empty:
-        fig8 = px.imshow([[0]], title="Heatmap")
+        fig8 = px.imshow([[0]], title="Severity Heatmap")
     else:
-        pivot = df8.pivot(index="vehicle_category", columns="hour", values="sev").fillna(0)
-        fig8 = px.imshow(pivot, title="Severity Heatmap")
+        pivot = df8.pivot(index="vehicle_category", columns="hour", values="avg_sev").fillna(0)
+        fig8 = px.imshow(pivot, title="Crash Severity Heatmap")
 
-    # ========== VIS 9 ==========
+    # VIS 9
     df9 = q(f"""
-        SELECT on_street_name, SUM(severity) AS tot
-        FROM collisions {where}
-        WHERE on_street_name IS NOT NULL
+        WITH base AS (
+            SELECT on_street_name, severity
+            FROM collisions {where}
+            WHERE on_street_name IS NOT NULL
+            LIMIT 200000
+        )
+        SELECT on_street_name, SUM(severity) AS total_severity
+        FROM base
         GROUP BY on_street_name
-        ORDER BY tot DESC
+        ORDER BY total_severity DESC
         LIMIT 15
     """)
-    fig9 = px.bar(df9, x="on_street_name", y="tot",
-                  title="Top Streets by Severity")
+    fig9 = px.bar(df9, x="on_street_name", y="total_severity",
+                  title="Top 15 Streets by Severity")
 
-    # ========== VIS 10 ==========
+    # VIS 10
     df10 = q(f"""
         SELECT person_age_group, person_type, person_injury, COUNT(*) AS count
         FROM collisions {where}
@@ -324,7 +346,34 @@ def update_all(_, borough, year, vehicle, factor, injury, query):
 
 
 # =========================================================
-# RUN ON FLY.IO
+# CLEAR BUTTON CALLBACKS
+# =========================================================
+@app.callback(
+    [
+        Output("borough_filter", "value"),
+        Output("year_filter", "value"),
+        Output("vehicle_filter", "value"),
+        Output("factor_filter", "value"),
+        Output("injury_filter", "value"),
+    ],
+    Input("clear_filters", "n_clicks"),
+    prevent_initial_call=True
+)
+def reset_filters(n):
+    return None, None, None, None, None
+
+
+@app.callback(
+    Output("search_box", "value"),
+    Input("clear_search", "n_clicks"),
+    prevent_initial_call=True
+)
+def reset_search(n):
+    return ""
+
+
+# =========================================================
+# RUN SERVER
 # =========================================================
 if __name__ == "__main__":
-    app.run_server(host="0.0.0.0", port=8080)
+    app.run_server(host="0.0.0.0", port=8080, debug=False)
