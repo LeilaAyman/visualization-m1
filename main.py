@@ -14,7 +14,6 @@ from dash import Dash, html, dcc, Input, Output, State
 
 PARQUET_URL = "https://f005.backblazeb2.com/file/visuadataset4455/final_cleaned_final.parquet"
 LOCAL_PATH = "/tmp/dataset.parquet"
-
 # ============================================================
 # DOWNLOAD DATASET ONE TIME
 # ============================================================
@@ -236,7 +235,8 @@ def update(_, borough, year, vehicle, factor, injury, query):
     # 1 — Trend
     df1 = q(f"""
         SELECT crash_year, borough,
-               SUM(number_of_pedestrians_injured +
+               SUM(
+                   number_of_pedestrians_injured +
                    number_of_cyclist_injured +
                    number_of_motorist_injured) AS total_injuries
         FROM collisions {where}
@@ -262,7 +262,8 @@ def update(_, borough, year, vehicle, factor, injury, query):
     # 3 — Borough Injuries
     df3 = q(f"""
         SELECT borough,
-               SUM(number_of_pedestrians_injured +
+               SUM( 
+                   number_of_pedestrians_injured +
                    number_of_cyclist_injured +
                    number_of_motorist_injured) AS injuries
         FROM collisions {where}
@@ -292,11 +293,13 @@ def update(_, borough, year, vehicle, factor, injury, query):
         SELECT 
             vehicle_category,
 
-            SUM(number_of_pedestrians_injured +
+            SUM(
+                number_of_pedestrians_injured +
                 number_of_cyclist_injured +
                 number_of_motorist_injured) AS injured,
 
-            SUM(number_of_pedestrians_killed +
+            SUM(
+                number_of_pedestrians_killed +
                 number_of_cyclist_killed +
                 number_of_motorist_killed) AS killed,
 
@@ -359,7 +362,8 @@ def update(_, borough, year, vehicle, factor, injury, query):
                    number_of_pedestrians_injured +
                    number_of_cyclist_injured +
                    number_of_motorist_injured +
-                   5*(number_of_pedestrians_killed +
+                   5*(
+                      number_of_pedestrians_killed +
                       number_of_cyclist_killed +
                       number_of_motorist_killed)
                ) AS severity
@@ -377,7 +381,8 @@ def update(_, borough, year, vehicle, factor, injury, query):
                    number_of_pedestrians_injured +
                    number_of_cyclist_injured +
                    number_of_motorist_injured +
-                   5*(number_of_pedestrians_killed +
+                   5*(
+                      number_of_pedestrians_killed +
                       number_of_cyclist_killed +
                       number_of_motorist_killed)
                ) AS severity
