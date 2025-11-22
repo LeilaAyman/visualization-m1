@@ -5,13 +5,14 @@ import pandas as pd
 import plotly.express as px
 from dash import Dash, html, dcc, Input, Output, State
 
-# =======================================================
-# PARQUET DOWNLOAD
-# =======================================================
+# =========================================================
+# PARQUET SETTINGS
+# =========================================================
 PARQUET_URL = "https://f005.backblazeb2.com/file/visuadataset4455/final_cleaned_final.parquet"
-LOCAL_PATH = "dataset.parquet"   # HF Spaces allows local write
+LOCAL_PATH = "dataset.parquet"   # Saved inside the container each deploy
 
 def ensure_dataset():
+    """Download parquet only if missing."""
     if not os.path.exists(LOCAL_PATH):
         print("🔥 Downloading dataset…")
         r = requests.get(PARQUET_URL, stream=True)
@@ -26,23 +27,25 @@ def ensure_dataset():
 
 ensure_dataset()
 
-# =======================================================
-# LOAD DATA USING DUCKDB
-# =======================================================
+# =========================================================
+# LOAD USING DUCKDB
+# =========================================================
 con = duckdb.connect(database=":memory:")
 df = con.execute(f"SELECT * FROM read_parquet('{LOCAL_PATH}')").df()
 
-# =======================================================
-# CLEANING
-# =======================================================
-df["borough"] = df["borough"].astype(str).str.strip().str.upper()
+# =========================================================
+# CLEANING & DERIVED COLUMNS
+# =========================================================
+df["borough"] = df["borough"].astype(str).str.upper().str.strip()
 df["crash_year"] = pd.to_numeric(df["crash_year"], errors="coerce").fillna(0).astype(int)
 
+# ---- Extract hour safely ----
 df["crash_time"] = df["crash_time"].astype(str).str.strip()
 df["hour"] = df["crash_time"].str.extract(r"^(\d{1,2})")[0].astype(float)
 df.loc[(df["hour"] < 0) | (df["hour"] > 23), "hour"] = None
 df["hour"] = df["hour"].fillna(df["hour"].mode()[0]).astype(int)
 
+# ---- Injury + severity ----
 df["total_injuries"] = (
     df["number_of_persons_injured"]
     + df["number_of_pedestrians_injured"]
@@ -57,10 +60,12 @@ df["severity"] = df["total_injuries"] + 5 * (
     + df["number_of_motorist_killed"]
 )
 
+# ---- Age categorization ----
 def categorize_age(age):
-    if pd.isna(age): return "Unknown"
-    try: age = int(age)
-    except: return "Unknown"
+    try:
+        age = int(age)
+    except:
+        return "Unknown"
     if age < 18: return "0–17"
     if age < 30: return "18–29"
     if age < 45: return "30–44"
@@ -69,10 +74,11 @@ def categorize_age(age):
 
 df["person_age_group"] = df["person_age"].apply(categorize_age)
 
-# =======================================================
+# =========================================================
 # DASH APP
-# =======================================================
+# =========================================================
 app = Dash(__name__)
+server = app.server  # Required for Fly.io
 
 app.layout = html.Div(style={"minHeight": "6000px"}, children=[
     html.H1("NYC Vehicle Collisions Dashboard", style={"textAlign": "center"}),
@@ -135,34 +141,14 @@ app.layout = html.Div(style={"minHeight": "6000px"}, children=[
                   style={"width": "60%", "height": "40px"})
     ], style={"textAlign": "center", "marginBottom": "20px"}),
 
-    dcc.Graph(id="injury_trend_graph"),
-    dcc.Graph(id="factor_bar_graph"),
-    dcc.Graph(id="bar_person_graph"),
-    dcc.Graph(id="line_day_graph"),
-    dcc.Graph(id="vehicle_severeinjuries_graph"),
-    dcc.Graph(id="gender_borough_graph"),
-    dcc.Graph(id="user_hourly_injuries_graph"),
-    dcc.Graph(id="user_severity_heatmap"),
-    dcc.Graph(id="street_severity_graph"),
-    dcc.Graph(id="age_group_graph"),
+    *[dcc.Graph(id=f"g{i}") for i in range(1, 11)]
 ])
 
-# =======================================================
+# =========================================================
 # CALLBACK
-# =======================================================
+# =========================================================
 @app.callback(
-    [
-        Output("injury_trend_graph", "figure"),
-        Output("factor_bar_graph", "figure"),
-        Output("bar_person_graph", "figure"),
-        Output("line_day_graph", "figure"),
-        Output("vehicle_severeinjuries_graph", "figure"),
-        Output("gender_borough_graph", "figure"),
-        Output("user_hourly_injuries_graph", "figure"),
-        Output("user_severity_heatmap", "figure"),
-        Output("street_severity_graph", "figure"),
-        Output("age_group_graph", "figure"),
-    ],
+    [Output(f"g{i}", "figure") for i in range(1, 11)],
     Input("generate_report", "n_clicks"),
     [
         State("borough_filter", "value"),
@@ -183,19 +169,27 @@ def update_all(_, borough, year, vehicle, factor, injury, query):
     if factor: dff = dff[dff["contributing_factor_combined"].isin(factor)]
     if injury: dff = dff[dff["person_injury"].isin(injury)]
 
-    person_column = "number_of_cyclist_injured"
     if query and len(query) >= 3:
         q = query.lower()
-        if "pedestrian" in q: person_column = "number_of_pedestrians_injured"
-        elif "cyclist" in q: person_column = "number_of_cyclist_injured"
-        elif "motorist" in q: person_column = "number_of_motorist_injured"
+        if "pedestrian" in q:
+            person_column = "number_of_pedestrians_injured"
+        elif "cyclist" in q:
+            person_column = "number_of_cyclist_injured"
+        elif "motorist" in q:
+            person_column = "number_of_motorist_injured"
+        else:
+            person_column = "number_of_cyclist_injured"
+    else:
+        person_column = "number_of_cyclist_injured"
 
     if dff.empty:
         empty = px.scatter(title="No data.")
         return [empty] * 10
 
+    # 10 Figures…
     fig1 = px.line(
-        dff.groupby(["crash_year", "borough"])["total_injuries"].sum().reset_index(),
+        dff.groupby(["crash_year", "borough"])["total_injuries"]
+        .sum().reset_index(),
         x="crash_year", y="total_injuries", color="borough",
         title="Total Injuries Trend"
     )
@@ -224,12 +218,10 @@ def update_all(_, borough, year, vehicle, factor, injury, query):
         title="Severity by Vehicle Category"
     )
 
-    gender_df = dff.groupby(["borough", "person_sex"]) \
-                   .size().reset_index(name="crashes")
+    gender_df = dff.groupby(["borough", "person_sex"]).size().reset_index(name="crashes")
     fig6 = px.bar(
-        gender_df, x="borough", y="crashes",
-        color="person_sex", barmode="group",
-        title="Crashes by Borough and Gender"
+        gender_df, x="borough", y="crashes", color="person_sex",
+        barmode="group", title="Crashes by Borough and Gender"
     )
 
     hourly = dff.groupby("hour")[
@@ -238,20 +230,17 @@ def update_all(_, borough, year, vehicle, factor, injury, query):
          "number_of_motorist_injured"]
     ].mean().reset_index()
 
-    melted = hourly.melt(id_vars="hour", var_name="type",
-                         value_name="avg")
+    melted = hourly.melt(id_vars="hour", var_name="type", value_name="avg")
     melted["type"] = melted["type"].map({
         "number_of_pedestrians_injured":"Pedestrian",
         "number_of_cyclist_injured":"Cyclist",
         "number_of_motorist_injured":"Motorist"
     })
-    fig7 = px.line(melted, x="hour", y="avg",
-                   color="type",
+    fig7 = px.line(melted, x="hour", y="avg", color="type",
                    title="Average Hourly Injuries")
 
     heat = dff.groupby(["vehicle_category", "hour"])["severity"].mean().reset_index()
-    pivot = heat.pivot(index="vehicle_category", columns="hour",
-                       values="severity").fillna(0)
+    pivot = heat.pivot(index="vehicle_category", columns="hour", values="severity").fillna(0)
     fig8 = px.imshow(pivot, title="Severity Heatmap")
 
     fig9 = px.bar(
@@ -262,9 +251,8 @@ def update_all(_, borough, year, vehicle, factor, injury, query):
     )
 
     fig10 = px.bar(
-        dff.groupby(["person_age_group",
-                     "person_type",
-                     "person_injury"]).size().reset_index(name="count"),
+        dff.groupby(["person_age_group", "person_type", "person_injury"])
+           .size().reset_index(name="count"),
         x="person_age_group", y="count",
         color="person_injury", facet_col="person_type",
         title="Age Group vs Injury Severity"
@@ -272,8 +260,8 @@ def update_all(_, borough, year, vehicle, factor, injury, query):
 
     return fig1, fig2, fig3, fig4, fig5, fig6, fig7, fig8, fig9, fig10
 
-
-server = app.server
-
+# =========================================================
+# FLY.IO RUN SETTINGS (PORT MUST BE 8080)
+# =========================================================
 if __name__ == "__main__":
-    app.run_server(host="0.0.0.0", port=7860)
+    app.run_server(host="0.0.0.0", port=8080)
