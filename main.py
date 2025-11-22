@@ -1,5 +1,5 @@
 # ================================
-# main.py — FINAL RAILWAY VERSION
+# main.py — FINAL RENDER VERSION (SEARCH FIXED + AGE GROUP FIXED)
 # ================================
 
 import os
@@ -8,6 +8,7 @@ import duckdb
 import pandas as pd
 import plotly.express as px
 from dash import Dash, html, dcc, Input, Output, State
+import re
 
 # ============================================================
 # SETTINGS
@@ -36,7 +37,7 @@ ensure_dataset()
 
 
 # ============================================================
-# CONNECT DUCKDB (NO FULL COPY INTO MEMORY!)
+# CONNECT DUCKDB (NO FULL COPY INTO MEMORY)
 # ============================================================
 con = duckdb.connect(database=":memory:")
 
@@ -82,7 +83,7 @@ injuries = q("SELECT DISTINCT person_injury FROM collisions ORDER BY person_inju
 # DASH APP
 # ============================================================
 app = Dash(__name__)
-server = app.server  # required for Railway, but WE WILL NOT USE GUNICORN
+server = app.server
 
 
 # ============================================================
@@ -170,23 +171,50 @@ app.layout = html.Div(style={"minHeight": "6000px"}, children=[
 
 
 # ============================================================
-# WHERE BUILDER
+# WHERE BUILDER — **UPDATED SEARCH**
 # ============================================================
 def build_where(borough, year, vehicle, factor, injury, query):
     filters = []
+
     if borough:
         filters.append(f"borough IN ({','.join([repr(b) for b in borough])})")
+
     if year:
         filters.append(f"crash_year IN ({','.join(map(str, year))})")
+
     if vehicle:
         filters.append(f"vehicle_category IN ({','.join([repr(v) for v in vehicle])})")
+
     if factor:
         filters.append(f"contributing_factor_combined IN ({','.join([repr(f) for f in factor])})")
+
     if injury:
         filters.append(f"person_injury IN ({','.join([repr(i) for i in injury])})")
+
+    # ------------------------------
+    # 🔥 FIXED SEARCH
+    # ------------------------------
     if query:
-        q = query.lower()
-        filters.append(f"(LOWER(borough) LIKE '%{q}%' OR LOWER(on_street_name) LIKE '%{q}%')")
+        q = query.lower().replace("'", "''")
+
+        filters.append(f"""
+            (
+                LOWER(borough) LIKE '%{q}%'
+                OR LOWER(on_street_name) LIKE '%{q}%'
+                OR LOWER(vehicle_category) LIKE '%{q}%'
+                OR LOWER(person_type) LIKE '%{q}%'
+                OR LOWER(person_injury) LIKE '%{q}%'
+                OR LOWER(contributing_factor_combined) LIKE '%{q}%'
+                OR LOWER(person_age_group) LIKE '%{q}%'
+            )
+        """)
+
+        # Year detection (e.g., 2018, 2020)
+        year_matches = re.findall(r"\b(20\\d{2})\b", q)
+        if year_matches:
+            filters.append("crash_year IN (" + ",".join(year_matches) + ")")
+
+    # Done
     return ("WHERE " + " AND ".join(filters)) if filters else ""
 
 
@@ -238,7 +266,7 @@ def update(_, borough, year, vehicle, factor, injury, query):
     fig1.update_xaxes(type="category")
 
     # --------------------------------------------------------
-    # GRAPH 2
+    # GRAPH 2 (Top Factors)
     # --------------------------------------------------------
     df2 = q(f"""
         SELECT contributing_factor_combined AS factor, COUNT(*) AS count
@@ -277,6 +305,7 @@ def update(_, borough, year, vehicle, factor, injury, query):
         FROM collisions {where}
         GROUP BY borough
     """)
+
     fig3 = px.bar(df3, x="borough", y="injuries",
                   title=f"Injuries by Borough – ({person_col})")
 
@@ -388,7 +417,7 @@ def update(_, borough, year, vehicle, factor, injury, query):
                   title="Top 15 Streets by Severity")
 
     # --------------------------------------------------------
-    # GRAPH 10
+    # GRAPH 10 — AGE GROUP FIXED
     # --------------------------------------------------------
     df10 = q(f"""
         SELECT person_age_group, person_type, person_injury, COUNT(*) AS count
@@ -430,9 +459,8 @@ def reset_search(_):
 
 
 # ============================================================
-# RUN SERVER (RAILWAY — NO GUNICORN)
+# RUN SERVER — RENDER
 # ============================================================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))  # Railway default is 8080
-    print(f"🚀 Running on 0.0.0.0:{port}")
+    port = int(os.environ.get("PORT", 8050))
     app.run_server(host="0.0.0.0", port=port, debug=False)
