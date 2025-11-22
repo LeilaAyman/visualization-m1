@@ -1,6 +1,4 @@
-dash
-pandas
-plotly
-flask
-requests
-duckdb
+dash==3.3.0
+plotly==6.5.0
+duckdb==1.4.2
+requests==2.32.5
