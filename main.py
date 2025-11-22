@@ -1,6 +1,7 @@
 # ============================
-# main.py — FINAL FULL CLEAN VERSION
+# main.py — FULL CLEAN VERSION
 # With Multi-Column Keyword Search
+# + Side-by-Side Injured/Killed Graph
 # ============================
 
 import os
@@ -13,21 +14,23 @@ from dash import Dash, html, dcc, Input, Output, State
 PARQUET_URL = "https://f005.backblazeb2.com/file/visuadataset4455/final_cleaned_final.parquet"
 LOCAL_PATH = "/tmp/dataset.parquet"
 
+
 # ============================================================
 # DOWNLOAD DATASET ONE TIME
 # ============================================================
 def ensure_dataset():
     if not os.path.exists(LOCAL_PATH):
-        print("🔥 Downloading dataset...")
+        print("Downloading dataset...")
         r = requests.get(PARQUET_URL, stream=True)
         r.raise_for_status()
         with open(LOCAL_PATH, "wb") as f:
             for chunk in r.iter_content(2 * 1024 * 1024):
                 if chunk:
                     f.write(chunk)
-        print("✅ Download complete")
+        print("Download complete")
     else:
-        print("👍 Using cached dataset:", LOCAL_PATH)
+        print("Using cached dataset:", LOCAL_PATH)
+
 
 ensure_dataset()
 
@@ -54,8 +57,10 @@ con.execute(f"""
     FROM read_parquet('{LOCAL_PATH}');
 """)
 
+
 def q(sql):
     return con.execute(sql).df()
+
 
 # ============================================================
 # DROPDOWN VALUES
@@ -130,9 +135,13 @@ app.layout = html.Div(children=[
     html.Br(),
 
     html.Div([
-        dcc.Input(id="search_box", type="text", debounce=True,
-                  placeholder="Search borough, street, factor, vehicle, injury, year...",
-                  style={"width": "60%", "height": "40px"})
+        dcc.Input(
+            id="search_box",
+            type="text",
+            debounce=True,
+            placeholder="Search borough, street, factor, vehicle, injury, year...",
+            style={"width": "60%", "height": "40px"}
+        )
     ], style={"textAlign": "center", "marginBottom": "20px"}),
 
     # Graphs
@@ -171,7 +180,7 @@ def build_where(borough, year, vehicle, factor, injury, query):
     if injury:
         filters.append(f"person_injury IN ({','.join([repr(i) for i in injury])})")
 
-    # 🔥 NEW: Search across many columns
+    # MULTI KEYWORD SEARCH
     if query and query.strip() != "":
         qtext = query.strip().lower().replace("'", "''")
         filters.append(f"""
@@ -267,28 +276,32 @@ def update(_, borough, year, vehicle, factor, injury, query):
         ORDER BY crash_day_of_week
     """)
     df4["day_name"] = df4["crash_day_of_week"].map({
-        0:"Mon",1:"Tue",2:"Wed",3:"Thu",4:"Fri",
-        5:"Sat",6:"Sun",-1:"Unknown"
+        0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri",
+        5: "Sat", 6: "Sun", -1: "Unknown"
     })
     fig4 = px.line(df4, x="day_name", y="crashes",
                    title="Crashes by Day of Week")
 
-    # 5 — Severity by Vehicle Category
+    # ============================================================
+    # 5 — Injured vs Killed by Vehicle Category (SIDE-BY-SIDE)
+    # ============================================================
     df5 = q(f"""
-        SELECT vehicle_category,
-               SUM(
-                   number_of_pedestrians_injured +
-                   number_of_cyclist_injured +
-                   number_of_motorist_injured +
-                   5*(number_of_pedestrians_killed +
-                      number_of_cyclist_killed +
-                      number_of_motorist_killed)
-               ) AS severity
-        FROM collisions {where}
+        SELECT 
+            vehicle_category,
+            SUM(number_of_persons_injured) AS injured,
+            SUM(number_of_persons_killed) AS killed
+        FROM collisions
+        {where}
         GROUP BY vehicle_category
     """)
-    fig5 = px.bar(df5, x="vehicle_category", y="severity",
-                  title="Severity Score by Vehicle Category")
+
+    fig5 = px.bar(
+        df5,
+        x="vehicle_category",
+        y=["injured", "killed"],
+        barmode="group",
+        title="Injured vs Killed by Vehicle Category"
+    )
 
     # 6 — Gender Counts
     df_gender = q(f"""
@@ -310,10 +323,10 @@ def update(_, borough, year, vehicle, factor, injury, query):
         GROUP BY hour
         ORDER BY hour
     """)
-    melted = df7.melt(id_vars="hour", var_name="type", value_name="avg")
-    melted["type"] = melted["type"].map({"ped":"Pedestrian","cyc":"Cyclist","mot":"Motorist"})
-    fig7 = px.line(melted, x="hour", y="avg", color="type",
-                   title="Average Hourly Injuries")
+    melted = df7.melt(id_vars="hour", var_name="type", value_name="avg_injuries")
+    melted["type"] = melted["type"].map({"ped": "Pedestrian", "cyc": "Cyclist", "mot": "Motorist"})
+    fig7 = px.line(melted, x="hour", y="avg_injuries", color="type",
+                   title="Average Hourly Injuries by User Type")
     fig7.update_traces(mode="lines+markers")
 
     # 8 — Heatmap
@@ -332,7 +345,7 @@ def update(_, borough, year, vehicle, factor, injury, query):
         GROUP BY vehicle_category, hour
     """)
     heat = df8.pivot(index="vehicle_category", columns="hour", values="severity").fillna(0)
-    fig8 = px.imshow(heat, title="Severity Heatmap by Vehicle Category & Hour")
+    fig8 = px.imshow(heat, title="Crash Severity Heatmap by Vehicle Category & Hour")
 
     # 9 — Top Streets
     df9 = q(f"""
@@ -365,6 +378,7 @@ def update(_, borough, year, vehicle, factor, injury, query):
 
     return fig1, fig2, fig3, fig4, fig5, fig_gender, fig7, fig8, fig9, fig10
 
+
 # ============================================================
 # CLEAR CALLBACKS
 # ============================================================
@@ -382,6 +396,7 @@ def update(_, borough, year, vehicle, factor, injury, query):
 def reset_filters(_):
     return None, None, None, None, None
 
+
 @app.callback(
     Output("search_box", "value"),
     Input("clear_search", "n_clicks"),
@@ -389,6 +404,7 @@ def reset_filters(_):
 )
 def reset_search(_):
     return ""
+
 
 # ============================================================
 # RUN SERVER
