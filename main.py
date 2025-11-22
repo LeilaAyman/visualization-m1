@@ -91,6 +91,7 @@ app.layout = html.Div(children=[
 
     # Filters
     html.Div([
+
         html.Div([
             html.Label("Borough"),
             dcc.Dropdown(id="borough_filter",
@@ -125,6 +126,7 @@ app.layout = html.Div(children=[
                          options=[{"label": i, "value": i} for i in injuries],
                          multi=True)
         ], style={"width": "15%", "display": "inline-block"}),
+
     ]),
 
     html.Br(),
@@ -285,14 +287,17 @@ def update(_, borough, year, vehicle, factor, injury, query):
     fig_gender = px.bar(df_gender, x="gender", y="crashes",
                         title="Total Crashes by Gender", color="gender")
 
-    # 7 — Hourly Injuries (FIXED)
+    # ------------------------------------------------------------
+    # 7 — Hourly Injuries (⭐ FIXED — NO MORE WHERE WHERE ⭐)
+    # ------------------------------------------------------------
     df7 = q(f"""
         SELECT hour,
                AVG(number_of_pedestrians_injured) AS ped,
                AVG(number_of_cyclist_injured) AS cyc,
                AVG(number_of_motorist_injured) AS mot
-        FROM collisions {where}
-        WHERE hour BETWEEN 0 AND 23
+        FROM collisions
+        {where}
+        AND hour BETWEEN 0 AND 23
         GROUP BY hour
         ORDER BY hour
     """)
@@ -306,7 +311,9 @@ def update(_, borough, year, vehicle, factor, injury, query):
                    title="Average Hourly Injuries")
     fig7.update_traces(mode="lines+markers")
 
+    # ------------------------------------------------------------
     # 8 — Heatmap
+    # ------------------------------------------------------------
     df8 = q(f"""
         SELECT vehicle_category, hour,
                AVG(
@@ -317,8 +324,9 @@ def update(_, borough, year, vehicle, factor, injury, query):
                       number_of_cyclist_killed +
                       number_of_motorist_killed)
                ) AS severity
-        FROM collisions {where}
-        WHERE hour BETWEEN 0 AND 23
+        FROM collisions
+        {where}
+        AND hour BETWEEN 0 AND 23
         GROUP BY vehicle_category, hour
     """)
 
@@ -327,7 +335,9 @@ def update(_, borough, year, vehicle, factor, injury, query):
         title="Severity Heatmap by Vehicle Category & Hour"
     )
 
+    # ------------------------------------------------------------
     # 9 — Top Streets
+    # ------------------------------------------------------------
     df9 = q(f"""
         SELECT on_street_name,
                SUM(
@@ -346,7 +356,9 @@ def update(_, borough, year, vehicle, factor, injury, query):
     fig9 = px.bar(df9, x="on_street_name", y="severity",
                   title="Top 15 Streets by Severity")
 
+    # ------------------------------------------------------------
     # 10 — Age Groups
+    # ------------------------------------------------------------
     df10 = q(f"""
         SELECT person_age_group, person_type, person_injury, COUNT(*) AS count
         FROM collisions {where}
