@@ -1,7 +1,8 @@
 # ============================
-# main.py — FULL CLEAN VERSION
+# main.py — FINAL CLEAN VERSION
 # With Multi-Column Keyword Search
 # + Side-by-Side Injured/Killed Graph
+# + FIXED SEVERITY (1 → 6 scale)
 # ============================
 
 import os
@@ -13,7 +14,6 @@ from dash import Dash, html, dcc, Input, Output, State
 
 PARQUET_URL = "https://f005.backblazeb2.com/file/visuadataset4455/final_cleaned_final.parquet"
 LOCAL_PATH = "/tmp/dataset.parquet"
-
 
 # ============================================================
 # DOWNLOAD DATASET ONE TIME
@@ -30,7 +30,6 @@ def ensure_dataset():
         print("Download complete")
     else:
         print("Using cached dataset:", LOCAL_PATH)
-
 
 ensure_dataset()
 
@@ -57,10 +56,8 @@ con.execute(f"""
     FROM read_parquet('{LOCAL_PATH}');
 """)
 
-
 def q(sql):
     return con.execute(sql).df()
-
 
 # ============================================================
 # DROPDOWN VALUES
@@ -98,37 +95,47 @@ app.layout = html.Div(children=[
     html.Div([
         html.Div([
             html.Label("Borough"),
-            dcc.Dropdown(id="borough_filter",
-                         options=[{"label": b, "value": b} for b in boroughs],
-                         multi=True)
+            dcc.Dropdown(
+                id="borough_filter",
+                options=[{"label": b, "value": b} for b in boroughs],
+                multi=True
+            )
         ], style={"width": "20%", "display": "inline-block"}),
 
         html.Div([
             html.Label("Year"),
-            dcc.Dropdown(id="year_filter",
-                         options=[{"label": int(y), "value": int(y)} for y in years],
-                         multi=True)
+            dcc.Dropdown(
+                id="year_filter",
+                options=[{"label": int(y), "value": int(y)} for y in years],
+                multi=True
+            )
         ], style={"width": "15%", "display": "inline-block"}),
 
         html.Div([
             html.Label("Vehicle Category"),
-            dcc.Dropdown(id="vehicle_filter",
-                         options=[{"label": v, "value": v} for v in vehicles],
-                         multi=True)
+            dcc.Dropdown(
+                id="vehicle_filter",
+                options=[{"label": v, "value": v} for v in vehicles],
+                multi=True
+            )
         ], style={"width": "25%", "display": "inline-block"}),
 
         html.Div([
             html.Label("Contributing Factor"),
-            dcc.Dropdown(id="factor_filter",
-                         options=[{"label": f, "value": f} for f in factors],
-                         multi=True)
+            dcc.Dropdown(
+                id="factor_filter",
+                options=[{"label": f, "value": f} for f in factors],
+                multi=True
+            )
         ], style={"width": "25%", "display": "inline-block"}),
 
         html.Div([
             html.Label("Injury Type"),
-            dcc.Dropdown(id="injury_filter",
-                         options=[{"label": i, "value": i} for i in injuries],
-                         multi=True)
+            dcc.Dropdown(
+                id="injury_filter",
+                options=[{"label": i, "value": i} for i in injuries],
+                multi=True
+            )
         ], style={"width": "15%", "display": "inline-block"}),
     ]),
 
@@ -157,12 +164,10 @@ app.layout = html.Div(children=[
     dcc.Graph(id="age_group_graph"),
 ])
 
-
 # ============================================================
 # WHERE BUILDER — MULTI-COLUMN SEARCH
 # ============================================================
 def build_where(borough, year, vehicle, factor, injury, query):
-
     filters = []
 
     if borough:
@@ -180,7 +185,6 @@ def build_where(borough, year, vehicle, factor, injury, query):
     if injury:
         filters.append(f"person_injury IN ({','.join([repr(i) for i in injury])})")
 
-    # MULTI KEYWORD SEARCH
     if query and query.strip() != "":
         qtext = query.strip().lower().replace("'", "''")
         filters.append(f"""
@@ -196,7 +200,6 @@ def build_where(borough, year, vehicle, factor, injury, query):
         """)
 
     return ("WHERE " + " AND ".join(filters)) if filters else ""
-
 
 # ============================================================
 # CALLBACK — MAIN UPDATE
@@ -283,46 +286,36 @@ def update(_, borough, year, vehicle, factor, injury, query):
                    title="Crashes by Day of Week")
 
     # ============================================================
-    # 5 — Injured vs Killed by Vehicle Category (SIDE-BY-SIDE)
+    # 5 — Injured / Killed / Severity by Vehicle Category
     # ============================================================
-   # ============================================================
-# 5 — Severity (injured + 5*killed) by Vehicle Category
-#    SIDE-BY-SIDE: Injured vs Killed with Severity Logic
-# ============================================================
-
     df5 = q(f"""
         SELECT 
             vehicle_category,
-    
-            -- standard injured count
-            SUM(
-                number_of_pedestrians_injured +
+
+            SUM(number_of_pedestrians_injured +
                 number_of_cyclist_injured +
-                number_of_motorist_injured
-            ) AS injured,
-    
-            -- standard killed count
-            SUM(
-                number_of_pedestrians_killed +
+                number_of_motorist_injured) AS injured,
+
+            SUM(number_of_pedestrians_killed +
                 number_of_cyclist_killed +
-                number_of_motorist_killed
-            ) AS killed,
-    
-            -- severity using the new consistent formula
+                number_of_motorist_killed) AS killed,
+
             SUM(
                 number_of_pedestrians_injured +
                 number_of_cyclist_injured +
                 number_of_motorist_injured +
-                5*(number_of_pedestrians_killed +
-                   number_of_cyclist_killed +
-                   number_of_motorist_killed)
+                5 * (
+                    number_of_pedestrians_killed +
+                    number_of_cyclist_killed +
+                    number_of_motorist_killed
+                )
             ) AS severity
-    
+
         FROM collisions
         {where}
         GROUP BY vehicle_category
     """)
-    
+
     fig5 = px.bar(
         df5,
         x="vehicle_category",
@@ -330,7 +323,6 @@ def update(_, borough, year, vehicle, factor, injury, query):
         barmode="group",
         title="Injured, Killed & Severity Score by Vehicle Category"
     )
-
 
     # 6 — Gender Counts
     df_gender = q(f"""
@@ -358,7 +350,9 @@ def update(_, borough, year, vehicle, factor, injury, query):
                    title="Average Hourly Injuries by User Type")
     fig7.update_traces(mode="lines+markers")
 
-    # 8 — Heatmap
+    # ============================================================
+    # 8 — Severity Heatmap (FIXED)
+    # ============================================================
     df8 = q(f"""
         SELECT vehicle_category, hour,
                AVG(
@@ -407,7 +401,6 @@ def update(_, borough, year, vehicle, factor, injury, query):
 
     return fig1, fig2, fig3, fig4, fig5, fig_gender, fig7, fig8, fig9, fig10
 
-
 # ============================================================
 # CLEAR CALLBACKS
 # ============================================================
@@ -425,7 +418,6 @@ def update(_, borough, year, vehicle, factor, injury, query):
 def reset_filters(_):
     return None, None, None, None, None
 
-
 @app.callback(
     Output("search_box", "value"),
     Input("clear_search", "n_clicks"),
@@ -433,7 +425,6 @@ def reset_filters(_):
 )
 def reset_search(_):
     return ""
-
 
 # ============================================================
 # RUN SERVER
