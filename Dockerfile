@@ -1,24 +1,24 @@
-# ---- Base Image ----
+# -------- BASE IMAGE --------
 FROM python:3.10-slim
 
-# Install system dependencies
+# -------- SYSTEM DEPENDENCIES --------
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- Set working directory ----
+# -------- WORK DIRECTORY --------
 WORKDIR /app
 
-# ---- Install Python dependencies ----
+# -------- INSTALL PYTHON DEPENDENCIES --------
 COPY requirements.txt requirements.txt
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# ---- Copy project files ----
+# -------- COPY APP CODE --------
 COPY . .
 
-# ---- Expose the Dash port ----
+# -------- EXPOSE PORT 8080 (Fly.io) --------
 EXPOSE 8080
 
-# ---- Run the app ----
+# -------- START DASH APP --------
 CMD ["python", "main.py"]
