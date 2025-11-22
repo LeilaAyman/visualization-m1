@@ -1,5 +1,5 @@
 # ================================
-# main.py — FINAL RENDER VERSION (SEARCH FIXED + AGE GROUP FIXED)
+# main.py — FINAL RENDER VERSION (SEARCH FIXED + AGE GROUP FIXED + GRAPH 3 FIXED)
 # ================================
 
 import os
@@ -46,13 +46,13 @@ con.execute(f"""
     SELECT
         *,
 
-        -- Extract hour from crash_time
+        -- Extract hour
         CASE 
             WHEN crash_time IS NULL THEN NULL
             ELSE TRY_CAST(SPLIT_PART(crash_time, ':', 1) AS INTEGER)
         END AS hour,
 
-        -- Compute age groups
+        -- Age groups
         CASE
             WHEN person_age IS NULL THEN 'Unknown'
             WHEN TRY_CAST(person_age AS INTEGER) < 18 THEN '0–17'
@@ -108,7 +108,6 @@ app.layout = html.Div(style={"minHeight": "6000px"}, children=[
                            "padding": "10px 20px", "fontWeight": "bold"})
     ], style={"textAlign": "center", "marginBottom": "20px"}),
 
-    # Filters
     html.Div([
 
         html.Div([
@@ -156,7 +155,6 @@ app.layout = html.Div(style={"minHeight": "6000px"}, children=[
                   style={"width": "60%", "height": "40px"})
     ], style={"textAlign": "center", "marginBottom": "20px"}),
 
-    # Graphs
     dcc.Graph(id="injury_trend_graph"),
     dcc.Graph(id="factor_bar_graph"),
     dcc.Graph(id="bar_person_graph"),
@@ -171,7 +169,7 @@ app.layout = html.Div(style={"minHeight": "6000px"}, children=[
 
 
 # ============================================================
-# WHERE BUILDER — **UPDATED SEARCH**
+# WHERE BUILDER — FIXED SEARCH
 # ============================================================
 def build_where(borough, year, vehicle, factor, injury, query):
     filters = []
@@ -209,12 +207,11 @@ def build_where(borough, year, vehicle, factor, injury, query):
             )
         """)
 
-        # Year detection (e.g., 2018, 2020)
+        # Detect year (e.g., 2018)
         year_matches = re.findall(r"\b(20\\d{2})\b", q)
         if year_matches:
             filters.append("crash_year IN (" + ",".join(year_matches) + ")")
 
-    # Done
     return ("WHERE " + " AND ".join(filters)) if filters else ""
 
 
@@ -266,7 +263,7 @@ def update(_, borough, year, vehicle, factor, injury, query):
     fig1.update_xaxes(type="category")
 
     # --------------------------------------------------------
-    # GRAPH 2 (Top Factors)
+    # GRAPH 2
     # --------------------------------------------------------
     df2 = q(f"""
         SELECT contributing_factor_combined AS factor, COUNT(*) AS count
@@ -279,7 +276,7 @@ def update(_, borough, year, vehicle, factor, injury, query):
                   title="Top 10 Contributing Factors")
 
     # --------------------------------------------------------
-    # GRAPH 3
+    # GRAPH 3 — FIXED (NO total_injuries column)
     # --------------------------------------------------------
     person_col = "total_injuries"
 
@@ -295,11 +292,17 @@ def update(_, borough, year, vehicle, factor, injury, query):
     df3 = q(f"""
         SELECT borough,
                SUM(
-                   CASE WHEN '{person_col}' = 'total_injuries'
-                        THEN number_of_pedestrians_injured +
-                             number_of_cyclist_injured +
-                             number_of_motorist_injured
-                        ELSE {person_col}
+                   CASE
+                       WHEN '{person_col}' = 'total_injuries' THEN
+                           number_of_pedestrians_injured +
+                           number_of_cyclist_injured +
+                           number_of_motorist_injured
+                       WHEN '{person_col}' = 'number_of_pedestrians_injured' THEN
+                           number_of_pedestrians_injured
+                       WHEN '{person_col}' = 'number_of_cyclist_injured' THEN
+                           number_of_cyclist_injured
+                       WHEN '{person_col}' = 'number_of_motorist_injured' THEN
+                           number_of_motorist_injured
                    END
                ) AS injuries
         FROM collisions {where}
@@ -307,7 +310,7 @@ def update(_, borough, year, vehicle, factor, injury, query):
     """)
 
     fig3 = px.bar(df3, x="borough", y="injuries",
-                  title=f"Injuries by Borough – ({person_col})")
+                  title=f"Injuries by Borough ({person_col})")
 
     # --------------------------------------------------------
     # GRAPH 4
@@ -432,7 +435,7 @@ def update(_, borough, year, vehicle, factor, injury, query):
 
 
 # ============================================================
-# CLEAR FILTER BUTTONS
+# CLEAR BUTTONS
 # ============================================================
 @app.callback(
     [
