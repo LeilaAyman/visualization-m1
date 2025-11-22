@@ -319,9 +319,13 @@ def reset_search(_):
 # =======================================================
 # VERCEL ENTRYPOINT
 # =======================================================
+# =======================================================
+# VERCEL ENTRYPOINT (the FIX)
+# =======================================================
 @server.route("/")
-def home():
+def index():
     return app.index()
 
-def handler(request):
-    return server(request)
+# Vercel needs the Flask WSGI app, NOT a function call
+handler = server
+
