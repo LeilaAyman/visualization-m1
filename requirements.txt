@@ -1,6 +1,6 @@
 dash
-flask
 pandas
-duckdb
 plotly
+flask
 requests
+duckdb
